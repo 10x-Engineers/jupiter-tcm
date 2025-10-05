@@ -1,8 +1,6 @@
-CROSS_COMPILE :=
-CC := $(CROSS_COMPILE)gcc
+CC := $(CROSS_COMPILE)clang
 OBJDUMP := $(CROSS_COMPILE)objdump
 AR := $(CROSS_COMPILE)ar
-
 
 CFLAGS  =-march=rv64gcv -mabi=lp64d
 CFLAGS += -I./
@@ -12,8 +10,6 @@ CFLAGS += -Iudma/
 TCM_SRC=tcm/tcm.c
 DMA_SRC=udma/udma.c
 AIMM_SRC=aimm.c
-
-# TESTS_SRC= tests/tcm_test.c
 
 CSRC= main.c
 
@@ -34,4 +30,3 @@ clean:
 	rm -f *.s;
 	rm -f *.a;
 	rm -f *.so;
-

@@ -16,124 +16,15 @@
 #include <riscv_vector.h>
 
 #include "aimm.h"
+#include "helpers.h"
+#include "ukernels.h"
 
 #define TCM_ALLOCATION_SIZE (128 * 1024)
 
-void intialize_matrix(int** matrix, int shape0, int shape1, int value) {
-    for (int i = 0; i < shape0; i++) {
-        for (int j = 0; j < shape1; j++) {
-            matrix[i][j] = value++;
-        }
-    }
-}
-
-void intialize_to_zero(int** matrix, int shape0, int shape1) {
-    for (int i = 0; i < shape0; i++) {
-        for (int j = 0; j < shape1; j++) {
-            matrix[i][j] = 0;
-        }
-    }
-}
-
-void pack(int** matrix, int* array, int shape0, int shape1, int inner_parallel, int inner_reduction) {
-    int index = 0;
-    for (int i = 0; i < shape0; i+=inner_parallel) {
-        for (int k = 0; k < shape1; k+=inner_reduction) {
-            for (int i0 = 0; i0 < inner_parallel; ++i0) {
-                for (int k0 = 0; k0 < inner_reduction; ++k0) {
-                    array[index++] = matrix[i + i0][k + k0];
-                }
-            }
-        }
-    }
-}
-
-void transpose(int** matrix, int** tranposed, int shape0, int shape1) {
-    for (int i = 0; i < shape0; i++) {
-        for (int j = 0; j < shape1; j++) {
-            tranposed[j][i] = matrix[i][j];
-        }
-    }
-}
-
-void unpack(int *array, int** matrix, int shape0, int shape1, int inner_parallel, int inner_reduction) {
-    int index = 0;
-    for (int i = 0; i < shape0; i+=inner_parallel) {
-        for (int k = 0; k < shape1; k+=inner_reduction) {
-            for (int i0 = 0; i0 < inner_parallel; ++i0) {
-                for (int k0 = 0; k0 < inner_reduction; ++k0) {
-                    matrix[i + i0][k + k0] = array[index++];
-                }
-            }
-        }
-    }
-}
-
-void compare(int **matrix1, int **matrix2, int shape0, int shape1) {
-    for (int i = 0; i < shape0; ++i) {
-        for (int j = 0; j < shape1; ++j) {
-            if (matrix1[i][j] != matrix2[i][j]) {
-                printf("Error at [%d], [%d] ---> %d, %d\n", i, j, matrix1[i][j], matrix2[i][j]);
-                return;
-            }
-        }
-    }
-}
-
-void free2D(int** matrix, int shape0) {
-    for (int i = 0; i < shape0; i++) {
-        free(matrix[i]);
-    }
-    free(matrix);
-}
-
-void mmt4d_rvv_tcm(int* lhs_full_dram, int* rhs_full_dma, int* res_full_dram, int* rhs_tcm, int M, int N, int K, int M0, int N0, int K0, int total_rhs_panels_to_prefetch) {
-    for (int j = 0; j < N; j++) {
-        if (j % total_rhs_panels_to_prefetch == 0) {
-            aimm_memcpy(rhs_tcm, &rhs_full_dma[j * K * N0 * K0], N0 * K0 * K * sizeof(int) * total_rhs_panels_to_prefetch);
-        }
-
-        int* rhs_panel_base = rhs_tcm + (j % total_rhs_panels_to_prefetch) * K * N0 * K0;
-
-        for (int i = 0; i < M; i++) {
-            int* lhs_panel = &lhs_full_dram[i * K * M0 * K0];
-            int* out_panel = &res_full_dram[i * N * M0 * N0 + j * M0 * N0];
-
-            int *rhs_panel = rhs_panel_base;
-
-            vint32m2_t acc0, acc1, acc2, acc3;
-            size_t vl = N0;
-
-            acc0 = __riscv_vle32_v_i32m2(out_panel, vl);
-            acc1 = __riscv_vle32_v_i32m2(out_panel + N0, vl);
-            acc2 = __riscv_vle32_v_i32m2(out_panel + N0 * 2, vl);
-            acc3 = __riscv_vle32_v_i32m2(out_panel + N0 * 3, vl);
-
-            int *lhs_ptr = lhs_panel;
-
-            for (int k = 0; k < K; ++k) {
-                vint32m2_t rhs = __riscv_vle32_v_i32m2(rhs_panel, vl);
-                rhs_panel += N0; // Move to the next K0 x N0 block in RHS
-
-                acc0 = __riscv_vmacc_vx_i32m2(acc0, *lhs_ptr++, rhs, vl);
-                acc1 = __riscv_vmacc_vx_i32m2(acc1, *lhs_ptr++, rhs, vl);
-                acc2 = __riscv_vmacc_vx_i32m2(acc2, *lhs_ptr++, rhs, vl);
-                acc3 = __riscv_vmacc_vx_i32m2(acc3, *lhs_ptr++, rhs, vl);
-            }
-
-            // Store the accumulated results back to DRAM
-            __riscv_vse32_v_i32m2(out_panel, acc0, vl);
-            __riscv_vse32_v_i32m2(out_panel + N0, acc1, vl);
-            __riscv_vse32_v_i32m2(out_panel + N0 * 2, acc2, vl);
-            __riscv_vse32_v_i32m2(out_panel + N0 * 3, acc3, vl);
-        }
-    }
-}
-
-void test_mmt4d_rvv_tcm(int** result, int** lhs, int** rhs, int M, int N, int K, int M0, int N0, int K0) {
-    int M1 = M / M0;
-    int N1 = N / N0;
-    int K1 = K / K0;
+void test_mmt4d_rvv_tcm(int** result, int** lhs, int** rhs, size_t M, size_t N, size_t K, size_t M0, size_t N0, size_t K0) {
+    size_t M1 = M / M0;
+    size_t N1 = N / N0;
+    size_t K1 = K / K0;
 
     if (aimm_init() < 0) {
         printf("Failed to initialize AIMM/TCM/UDMA system.\n");
@@ -151,12 +42,12 @@ void test_mmt4d_rvv_tcm(int** result, int** lhs, int** rhs, int M, int N, int K,
 
     size_t size_of_rhs_panel = N0 * K0 * K1 * sizeof(int);
 	// int total_rhs_panels_to_prefetch = TCM_ALLOCATION_SIZE / size_of_rhs_panel;
-	int total_rhs_panels_to_prefetch = 2;
+	size_t total_rhs_panels_to_prefetch = 2;
 
     size_t rhs_tcm_space = size_of_rhs_panel * total_rhs_panels_to_prefetch;
     assert(rhs_tcm_space <= TCM_ALLOCATION_SIZE);
 
-	printf("Size of RHS panels in TCM: %.2f KB x %d\n", size_of_rhs_panel / 1024.0, total_rhs_panels_to_prefetch);
+	printf("Size of RHS panels in TCM: %.2f KB x %zu\n", size_of_rhs_panel / 1024.0, total_rhs_panels_to_prefetch);
 
     void* tcm_base = aimm_tcm_malloc_sync(TCM_ALLOCATION_SIZE, 0);
     if (tcm_base == NULL) {
@@ -176,7 +67,7 @@ void test_mmt4d_rvv_tcm(int** result, int** lhs, int** rhs, int M, int N, int K,
     pack(rhs_t, rhs_t_packed, N, K, N0, K0);
 
     clock_gettime(CLOCK_MONOTONIC, &start);
-    mmt4d_rvv_tcm(lhs_packed, rhs_t_packed, res_packed, rhs_t_packed_tcm, M1, N1, K1, M0, N0, K0, total_rhs_panels_to_prefetch);
+    mmt4d_s32s32s32_tcm(lhs_packed, rhs_t_packed, res_packed, rhs_t_packed_tcm, M1, N1, K1, M0, N0, K0, total_rhs_panels_to_prefetch);
     clock_gettime(CLOCK_MONOTONIC, &end);
 
     unpack(res_packed, result, M, N, M0, N0);
@@ -191,52 +82,11 @@ void test_mmt4d_rvv_tcm(int** result, int** lhs, int** rhs, int M, int N, int K,
     aimm_deinit();
 }
 
-void mmt4d_rvv(int* lhs_packed, int* rhs_packed, int* res_packed, int M1, int N1, int K1, int M0, int N0, int K0) {
-    struct timespec start, end;
 
-    for (int i = 0; i < M1; i++) {
-        int* lhs_panel = &lhs_packed[i * K1 * M0 * K0];
-        for (int j = 0; j < N1; j++) {
-            int* rhs_panel = &rhs_packed[j * K1 * N0 * K0];
-            int* out_panel = &res_packed[i * N1 * M0 * N0 + j * M0 * N0];
-
-            vint32m2_t acc0, acc1, acc2, acc3;
-            size_t vl = N0;
-
-            acc0 = __riscv_vle32_v_i32m2(out_panel, vl);
-            acc1 = __riscv_vle32_v_i32m2(out_panel + N0, vl);
-            acc2 = __riscv_vle32_v_i32m2(out_panel + N0 * 2, vl);
-            acc3 = __riscv_vle32_v_i32m2(out_panel + N0 * 3, vl);
-
-            int *lhs_ptr = lhs_panel;
-
-            for (int k = 0; k < K1; ++k) {
-                vint32m2_t rhs = __riscv_vle32_v_i32m2(rhs_panel, vl);
-
-                rhs_panel += N0;
-
-                int lhs[4];
-                for (int x = 0; x < M0; ++x) {
-                    lhs[x] = *lhs_ptr++;
-                }
-
-                acc0 = __riscv_vmacc_vx_i32m2(acc0, lhs[0], rhs, vl);
-                acc1 = __riscv_vmacc_vx_i32m2(acc1, lhs[1], rhs, vl);
-                acc2 = __riscv_vmacc_vx_i32m2(acc2, lhs[2], rhs, vl);
-                acc3 = __riscv_vmacc_vx_i32m2(acc3, lhs[3], rhs, vl);
-            }
-            __riscv_vse32_v_i32m2(out_panel, acc0, vl);
-            __riscv_vse32_v_i32m2(out_panel + N0, acc1, vl);
-            __riscv_vse32_v_i32m2(out_panel + N0 * 2, acc2, vl);
-            __riscv_vse32_v_i32m2(out_panel + N0 * 3, acc3, vl);
-        }
-    }
-}
-
-void test_mmt4d_rvv(int** result, int** lhs, int** rhs, int M, int N, int K, int M0, int N0, int K0) {
-    int M1 = M / M0;
-    int N1 = N / N0;
-    int K1 = K / K0;
+void test_mmt4d_rvv(int** result, int** lhs, int** rhs, size_t M, size_t N, size_t K, size_t M0, size_t N0, size_t K0) {
+    size_t M1 = M / M0;
+    size_t N1 = N / N0;
+    size_t K1 = K / K0;
 
     int** rhs_t = (int**)malloc(N * sizeof(int*));
     for (int i = 0; i < N; i++) {
@@ -253,7 +103,7 @@ void test_mmt4d_rvv(int** result, int** lhs, int** rhs, int M, int N, int K, int
     pack(rhs_t, rhs_t_packed, N, K, N0, K0);
 
     clock_gettime(CLOCK_MONOTONIC, &start);
-    mmt4d_rvv(lhs_packed, rhs_t_packed, res_packed, M1, N1, K1, M0, N0, K0);
+    mmt4d_s32s32s32(lhs_packed, rhs_t_packed, res_packed, M1, N1, K1, M0, N0, K0);
     clock_gettime(CLOCK_MONOTONIC, &end);
 
     unpack(res_packed, result, M, N, M0, N0);
@@ -266,21 +116,11 @@ void test_mmt4d_rvv(int** result, int** lhs, int** rhs, int M, int N, int K, int
     free(res_packed);
 }
 
-void matmul(int** lhs, int** rhs, int** res, int M, int N, int K) {
-    for (int i = 0; i < M; i++) {
-        for (int j = 0; j < N; j++) {
-            for (int k = 0; k < K; k++) {
-                res[i][j] += lhs[i][k] * rhs[k][j];
-            }
-        }
-    }
-}
-
-void test_matmul(int** result, int** lhs, int** rhs, int M, int N, int K) {
+void test_matmul(int** result, int** lhs, int** rhs, size_t M, size_t N, size_t K) {
     struct timespec start, end;
 
     clock_gettime(CLOCK_MONOTONIC, &start);
-    matmul(lhs, rhs, result, M, N, K);
+    matmul_s32s32s32(lhs, rhs, result, M, N, K);
     clock_gettime(CLOCK_MONOTONIC, &end);
 
     double matmul_time = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
@@ -288,6 +128,7 @@ void test_matmul(int** result, int** lhs, int** rhs, int M, int N, int K) {
 }
 
 int main(int agrc, char* argv[]) {
+    // setting process affinity to AI Cores (0-3)
     cpu_set_t mask;
     CPU_ZERO(&mask);
     CPU_SET(0, &mask);
@@ -297,12 +138,12 @@ int main(int agrc, char* argv[]) {
         return 1;
     }
 
-	int M = atoi(argv[1]);
-    int N = atoi(argv[2]);
-    int K = atoi(argv[3]);
-    int M0 = atoi(argv[4]);
-    int N0 = atoi(argv[5]);
-    int K0 = atoi(argv[6]);
+	size_t M = atoi(argv[1]);
+    size_t N = atoi(argv[2]);
+    size_t K = atoi(argv[3]);
+    size_t M0 = atoi(argv[4]);
+    size_t N0 = atoi(argv[5]);
+    size_t K0 = atoi(argv[6]);
 
     int** lhs = (int**)malloc(M * sizeof(int*));
     for (int i = 0; i < M; i++) {
