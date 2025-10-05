@@ -1,4 +1,4 @@
-# Jupiter's TCM
+# Jupiter's Tighly Coupled Memory (TCM)
 
 ## Usage
 ```bash
