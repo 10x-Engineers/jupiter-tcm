@@ -21,7 +21,7 @@
 
 #define TCM_ALLOCATION_SIZE (128 * 1024)
 
-void test_mmt4d_rvv_tcm(int** result, int** lhs, int** rhs, size_t M, size_t N, size_t K, size_t M0, size_t N0, size_t K0) {
+void test_mmt4d_tcm(int** result, int** lhs, int** rhs, size_t M, size_t N, size_t K, size_t M0, size_t N0, size_t K0) {
     size_t M1 = M / M0;
     size_t N1 = N / N0;
     size_t K1 = K / K0;
@@ -71,8 +71,8 @@ void test_mmt4d_rvv_tcm(int** result, int** lhs, int** rhs, size_t M, size_t N, 
     clock_gettime(CLOCK_MONOTONIC, &end);
 
     unpack(res_packed, result, M, N, M0, N0);
-    double mmt4d_rvv_time = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
-    printf("Time for mmt4d: %f seconds\n", mmt4d_rvv_time);
+    double mmt4d_time = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
+    printf("Time for mmt4d with TCM: %f seconds\n", mmt4d_time);
 
     aimm_tcm_free(rhs_t_packed_tcm);
     free(lhs_packed);
@@ -83,7 +83,7 @@ void test_mmt4d_rvv_tcm(int** result, int** lhs, int** rhs, size_t M, size_t N, 
 }
 
 
-void test_mmt4d_rvv(int** result, int** lhs, int** rhs, size_t M, size_t N, size_t K, size_t M0, size_t N0, size_t K0) {
+void test_mmt4d(int** result, int** lhs, int** rhs, size_t M, size_t N, size_t K, size_t M0, size_t N0, size_t K0) {
     size_t M1 = M / M0;
     size_t N1 = N / N0;
     size_t K1 = K / K0;
@@ -107,8 +107,8 @@ void test_mmt4d_rvv(int** result, int** lhs, int** rhs, size_t M, size_t N, size
     clock_gettime(CLOCK_MONOTONIC, &end);
 
     unpack(res_packed, result, M, N, M0, N0);
-    double mmt4d_rvv_time = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
-    printf("Time for mmt4d: %f seconds\n", mmt4d_rvv_time);
+    double mmt4d_time = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
+    printf("Time for mmt4d: %f seconds\n", mmt4d_time);
 
     free2D(rhs_t, N);
     free(lhs_packed);
@@ -173,8 +173,8 @@ int main(int agrc, char* argv[]) {
     intialize_to_zero(res_mmt4d_tcm, M, N);
 
     test_matmul(res_matmul, lhs, rhs, M, N, K);
-    test_mmt4d_rvv(res_mmt4d, lhs, rhs, M, N, K, M0, N0, K0);
-    test_mmt4d_rvv_tcm(res_mmt4d_tcm, lhs, rhs, M, N, K, M0, N0, K0);
+    test_mmt4d(res_mmt4d, lhs, rhs, M, N, K, M0, N0, K0);
+    test_mmt4d_tcm(res_mmt4d_tcm, lhs, rhs, M, N, K, M0, N0, K0);
 
     compare(res_matmul, res_mmt4d, M, N);
     compare(res_mmt4d, res_mmt4d_tcm, M, N);
