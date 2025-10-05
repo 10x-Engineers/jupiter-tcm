@@ -1,10 +1,10 @@
-# TCM + UDMA
+# Jupiter's TCM
 
 ## Usage
 ```bash
 make
 
-sudo ./app.elf 1024 1024 1024 4 16 1
+./app.elf 1024 1024 1024 4 16 1
 ```
 
 ## Tests
