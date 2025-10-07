@@ -41,13 +41,13 @@ void test_mmt4d_tcm(int** result, int** lhs, int** rhs, size_t M, size_t N, size
     int* res_packed = (int*)malloc(M * N * sizeof(int));
 
     size_t size_of_rhs_panel = N0 * K0 * K1 * sizeof(int);
-	// int total_rhs_panels_to_prefetch = TCM_ALLOCATION_SIZE / size_of_rhs_panel;
-	size_t total_rhs_panels_to_prefetch = 2;
+    // int total_rhs_panels_to_prefetch = TCM_ALLOCATION_SIZE / size_of_rhs_panel;
+    size_t total_rhs_panels_to_prefetch = 2;
 
     size_t rhs_tcm_space = size_of_rhs_panel * total_rhs_panels_to_prefetch;
     assert(rhs_tcm_space <= TCM_ALLOCATION_SIZE);
 
-	printf("Size of RHS panels in TCM: %.2f KB x %zu\n", size_of_rhs_panel / 1024.0, total_rhs_panels_to_prefetch);
+    printf("Size of RHS panels in TCM: %.2f KB x %zu\n", size_of_rhs_panel / 1024.0, total_rhs_panels_to_prefetch);
 
     void* tcm_base = aimm_tcm_malloc_sync(TCM_ALLOCATION_SIZE, 0);
     if (tcm_base == NULL) {
@@ -138,7 +138,7 @@ int main(int agrc, char* argv[]) {
         return 1;
     }
 
-	size_t M = atoi(argv[1]);
+    size_t M = atoi(argv[1]);
     size_t N = atoi(argv[2]);
     size_t K = atoi(argv[3]);
     size_t M0 = atoi(argv[4]);

@@ -45,8 +45,6 @@ void mmt4d_s32s32s32_tcm(int* lhs_full_dram, int* rhs_full_dma, int* res_full_dr
 }
 
 void mmt4d_s32s32s32(int* lhs_packed, int* rhs_packed, int* res_packed, size_t M1, size_t N1, size_t K1, size_t M0, size_t N0, size_t K0) {
-    struct timespec start, end;
-
     for (int i = 0; i < M1; i++) {
         int* lhs_panel = &lhs_packed[i * K1 * M0 * K0];
         for (int j = 0; j < N1; j++) {
