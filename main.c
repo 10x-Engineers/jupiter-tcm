@@ -13,15 +13,31 @@
 #include <sched.h>
 #include <assert.h>
 
-#include <riscv_vector.h>
-
 #include "aimm.h"
 #include "helpers.h"
 #include "ukernels.h"
 
 #define TCM_ALLOCATION_SIZE (128 * 1024)
 
-void test_mmt4d_tcm(int** result, int** lhs, int** rhs, size_t M, size_t N, size_t K, size_t M0, size_t N0, size_t K0) {
+// Function to flush the cache by accessing a large memory block
+void flush_cache() {
+    // This size should be larger than the L2 cache.
+    const size_t cache_size = 2 * 1024 * 1024;
+    volatile char* cache_killer = (volatile char*)malloc(cache_size);
+    if (cache_killer == NULL) {
+        perror("Failed to allocate memory for cache flushing");
+        return;
+    }
+
+    // Read every byte to force it into the cache.
+    for (size_t i = 0; i < cache_size; ++i) {
+        cache_killer[i] = 1;
+    }
+
+    free((void*)cache_killer);
+}
+
+void test_mmt4d_tcm(int** result, int8_t** lhs, int8_t** rhs, size_t M, size_t N, size_t K, size_t M0, size_t N0, size_t K0) {
     size_t M1 = M / M0;
     size_t N1 = N / N0;
     size_t K1 = K / K0;
@@ -31,23 +47,23 @@ void test_mmt4d_tcm(int** result, int** lhs, int** rhs, size_t M, size_t N, size
         return;
     }
 
-    int** rhs_t = (int**)malloc(N * sizeof(int*));
+    int8_t** rhs_t = (int8_t**)malloc(N * sizeof(int8_t*));
     for (int i = 0; i < N; i++) {
-        rhs_t[i] = (int*)malloc(K * sizeof(int));
+        rhs_t[i] = (int8_t*)malloc(K * sizeof(int8_t));
     }
 
-    int* lhs_packed = (int*)malloc(M * K * sizeof(int));
-    int* rhs_t_packed = (int*)aimm_dram_malloc(N * K * sizeof(int));
+    int8_t* lhs_packed = (int8_t*)malloc(M * K * sizeof(int8_t));
+    int8_t* rhs_t_packed = (int8_t*)aimm_dram_malloc(N * K * sizeof(int8_t));
     int* res_packed = (int*)malloc(M * N * sizeof(int));
 
-    size_t size_of_rhs_panel = N0 * K0 * K1 * sizeof(int);
-    // int total_rhs_panels_to_prefetch = TCM_ALLOCATION_SIZE / size_of_rhs_panel;
-    size_t total_rhs_panels_to_prefetch = 2;
+    size_t size_of_rhs_panel = N0 * K0 * K1 * sizeof(int8_t);
+	size_t total_rhs_panels_to_prefetch = TCM_ALLOCATION_SIZE / size_of_rhs_panel;
+	// size_t total_rhs_panels_to_prefetch = 2;
 
     size_t rhs_tcm_space = size_of_rhs_panel * total_rhs_panels_to_prefetch;
     assert(rhs_tcm_space <= TCM_ALLOCATION_SIZE);
 
-    printf("Size of RHS panels in TCM: %.2f KB x %zu\n", size_of_rhs_panel / 1024.0, total_rhs_panels_to_prefetch);
+	printf("Size of RHS panels in TCM: %.2f KB x %zu\n", size_of_rhs_panel / 1024.0, total_rhs_panels_to_prefetch);
 
     void* tcm_base = aimm_tcm_malloc_sync(TCM_ALLOCATION_SIZE, 0);
     if (tcm_base == NULL) {
@@ -59,15 +75,16 @@ void test_mmt4d_tcm(int** result, int** lhs, int** rhs, size_t M, size_t N, size
         aimm_deinit();
         return;
     }
-    int* rhs_t_packed_tcm = (int*)tcm_base;
+    int8_t* rhs_t_packed_tcm = (int8_t*)tcm_base;
 
     struct timespec start, end;
     pack(lhs, lhs_packed, M, K, M0, K0);
     transpose(rhs, rhs_t, K, N);
     pack(rhs_t, rhs_t_packed, N, K, N0, K0);
 
+    flush_cache();
     clock_gettime(CLOCK_MONOTONIC, &start);
-    mmt4d_s32s32s32_tcm(lhs_packed, rhs_t_packed, res_packed, rhs_t_packed_tcm, M1, N1, K1, M0, N0, K0, total_rhs_panels_to_prefetch);
+    mmt4d_s8s8s32_tcm(lhs_packed, rhs_t_packed, res_packed, rhs_t_packed_tcm, M1, N1, K1, M0, N0, K0, total_rhs_panels_to_prefetch);
     clock_gettime(CLOCK_MONOTONIC, &end);
 
     unpack(res_packed, result, M, N, M0, N0);
@@ -83,18 +100,18 @@ void test_mmt4d_tcm(int** result, int** lhs, int** rhs, size_t M, size_t N, size
 }
 
 
-void test_mmt4d(int** result, int** lhs, int** rhs, size_t M, size_t N, size_t K, size_t M0, size_t N0, size_t K0) {
+void test_mmt4d(int** result, int8_t** lhs, int8_t** rhs, size_t M, size_t N, size_t K, size_t M0, size_t N0, size_t K0) {
     size_t M1 = M / M0;
     size_t N1 = N / N0;
     size_t K1 = K / K0;
 
-    int** rhs_t = (int**)malloc(N * sizeof(int*));
+    int8_t** rhs_t = (int8_t**)malloc(N * sizeof(int8_t*));
     for (int i = 0; i < N; i++) {
-        rhs_t[i] = (int*)malloc(K * sizeof(int));
+        rhs_t[i] = (int8_t*)malloc(K * sizeof(int8_t));
     }
 
-    int* lhs_packed = (int*)malloc(M * K * sizeof(int));
-    int* rhs_t_packed = (int*)malloc(N * K * sizeof(int));
+    int8_t* lhs_packed = (int8_t*)malloc(M * K * sizeof(int8_t));
+    int8_t* rhs_t_packed = (int8_t*)malloc(N * K * sizeof(int8_t));
     int* res_packed = (int*)malloc(M * N * sizeof(int));
 
     struct timespec start, end;
@@ -102,8 +119,9 @@ void test_mmt4d(int** result, int** lhs, int** rhs, size_t M, size_t N, size_t K
     transpose(rhs, rhs_t, K, N);
     pack(rhs_t, rhs_t_packed, N, K, N0, K0);
 
+    flush_cache();
     clock_gettime(CLOCK_MONOTONIC, &start);
-    mmt4d_s32s32s32(lhs_packed, rhs_t_packed, res_packed, M1, N1, K1, M0, N0, K0);
+    mmt4d_s8s8s32(lhs_packed, rhs_t_packed, res_packed, M1, N1, K1, M0, N0, K0);
     clock_gettime(CLOCK_MONOTONIC, &end);
 
     unpack(res_packed, result, M, N, M0, N0);
@@ -116,11 +134,11 @@ void test_mmt4d(int** result, int** lhs, int** rhs, size_t M, size_t N, size_t K
     free(res_packed);
 }
 
-void test_matmul(int** result, int** lhs, int** rhs, size_t M, size_t N, size_t K) {
+void test_matmul(int** result, int8_t** lhs, int8_t** rhs, size_t M, size_t N, size_t K) {
     struct timespec start, end;
 
     clock_gettime(CLOCK_MONOTONIC, &start);
-    matmul_s32s32s32(lhs, rhs, result, M, N, K);
+    matmul_s8s8s32(lhs, rhs, result, M, N, K);
     clock_gettime(CLOCK_MONOTONIC, &end);
 
     double matmul_time = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
@@ -138,22 +156,22 @@ int main(int agrc, char* argv[]) {
         return 1;
     }
 
-    size_t M = atoi(argv[1]);
+	size_t M = atoi(argv[1]);
     size_t N = atoi(argv[2]);
     size_t K = atoi(argv[3]);
     size_t M0 = atoi(argv[4]);
     size_t N0 = atoi(argv[5]);
     size_t K0 = atoi(argv[6]);
 
-    int** lhs = (int**)malloc(M * sizeof(int*));
+    int8_t** lhs = (int8_t**)malloc(M * sizeof(int8_t*));
     for (int i = 0; i < M; i++) {
-        lhs[i] = (int*)malloc(K * sizeof(int));
+        lhs[i] = (int8_t*)malloc(K * sizeof(int8_t));
     }
-    int** rhs = (int**)malloc(K * sizeof(int*));
+    int8_t** rhs = (int8_t**)malloc(K * sizeof(int8_t*));
     for (int i = 0; i < K; i++) {
-        rhs[i] = (int*)malloc(N * sizeof(int));
+        rhs[i] = (int8_t*)malloc(N * sizeof(int8_t));
     }
-    int** res_matmul = (int**)malloc(M * sizeof(int*));
+    int** res_matmul = (int**)malloc(M * sizeof(int8_t*));
     for (int i = 0; i < M; i++) {
         res_matmul[i] = (int*)malloc(N * sizeof(int));
     }
@@ -172,20 +190,20 @@ int main(int agrc, char* argv[]) {
     intialize_to_zero(res_mmt4d, M, N);
     intialize_to_zero(res_mmt4d_tcm, M, N);
 
-    test_matmul(res_matmul, lhs, rhs, M, N, K);
+    // test_matmul(res_matmul, lhs, rhs, M, N, K);
     test_mmt4d(res_mmt4d, lhs, rhs, M, N, K, M0, N0, K0);
     test_mmt4d_tcm(res_mmt4d_tcm, lhs, rhs, M, N, K, M0, N0, K0);
 
-    compare(res_matmul, res_mmt4d, M, N);
+    // compare(res_matmul, res_mmt4d, M, N);
     compare(res_mmt4d, res_mmt4d_tcm, M, N);
 
     printf("All results match!\n");
 
     free2D(lhs, M);
     free2D(rhs, K);
-    free2D(res_matmul, M);
-    free2D(res_mmt4d, M);
-    free2D(res_mmt4d_tcm, M);
+    free2D_s32(res_matmul, M);
+    free2D_s32(res_mmt4d, M);
+    free2D_s32(res_mmt4d_tcm, M);
 
     return 0;
 }

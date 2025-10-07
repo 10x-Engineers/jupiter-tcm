@@ -1,6 +1,6 @@
-CC := $(CROSS_COMPILE)clang
-OBJDUMP := $(CROSS_COMPILE)objdump
-AR := $(CROSS_COMPILE)ar
+CC := clang
+OBJDUMP := objdump
+AR := ar
 
 CFLAGS  =-march=rv64gcv -mabi=lp64d
 CFLAGS += -I./
@@ -20,7 +20,7 @@ all:
 	@$(CC) -o aimm.o -c $(AIMM_SRC) $(CFLAGS)
 	@$(AR) rcs libaimm.a aimm.o udma.o tcm.o
 
-	@$(CC) -O3 -o app.elf $(CSRC) $(CFLAGS) -static -lpthread -L. -laimm
+	@$(CC) -g -Og -o app.elf $(CSRC) $(CFLAGS) -static -lpthread -L. -laimm
 
 clean:
 	rm -f *.o;
