@@ -21,7 +21,7 @@
 
 #define TCM_ALLOCATION_SIZE (128 * 1024)
 
-void test_mmt4d_tcm(int** result, int8_t** lhs, int8_t** rhs, size_t M, size_t N, size_t K, size_t M0, size_t N0, size_t K0) {
+void test_mmt4d_tcm_decode(int** result, int8_t** lhs, int8_t** rhs, size_t M, size_t N, size_t K, size_t M0, size_t N0, size_t K0) {
     size_t M1 = M / M0;
     size_t N1 = N / N0;
     size_t K1 = K / K0;
@@ -36,13 +36,14 @@ void test_mmt4d_tcm(int** result, int8_t** lhs, int8_t** rhs, size_t M, size_t N
         rhs_t[i] = (int8_t*)malloc(K * sizeof(int8_t));
     }
 
-    int8_t* lhs_packed = (int8_t*)malloc(M * K * sizeof(int8_t));
-    int8_t* rhs_t_packed = (int8_t*)aimm_dram_malloc(N * K * sizeof(int8_t));
+    void* dma = (void*)aimm_dram_malloc(M * K * sizeof(int8_t) + N * K * sizeof(int8_t));
+    int8_t* lhs_packed = (int8_t*)dma;
+    int8_t* rhs_t_packed = (int8_t*)dma + M * K * sizeof(int8_t);
     int* res_packed = (int*)malloc(M * N * sizeof(int));
 
     size_t size_of_rhs_panel = N0 * K0 * K1 * sizeof(int8_t);
-	size_t total_rhs_panels_to_prefetch = TCM_ALLOCATION_SIZE / size_of_rhs_panel;
-	// size_t total_rhs_panels_to_prefetch = 2;
+	// size_t total_rhs_panels_to_prefetch = (TCM_ALLOCATION_SIZE - M * K * sizeof(int8_t)) / size_of_rhs_panel;
+	size_t total_rhs_panels_to_prefetch = 3;
 
     size_t rhs_tcm_space = size_of_rhs_panel * total_rhs_panels_to_prefetch;
     assert(rhs_tcm_space <= TCM_ALLOCATION_SIZE);
@@ -52,36 +53,38 @@ void test_mmt4d_tcm(int** result, int8_t** lhs, int8_t** rhs, size_t M, size_t N
     void* tcm_base = aimm_tcm_malloc_sync(TCM_ALLOCATION_SIZE, 0);
     if (tcm_base == NULL) {
         printf("Failed to allocate TCM memory for tiles.\n");
-        free(lhs_packed);
-        aimm_dram_free(rhs_t_packed);
+        aimm_dram_free(dma);
         free(res_packed);
         free2D(rhs_t, N);
         aimm_deinit();
         return;
     }
-    int8_t* rhs_t_packed_tcm = (int8_t*)tcm_base;
+
+    int8_t* lhs_packed_tcm = (int8_t*)tcm_base;
+    int8_t* rhs_t_packed_tcm = (int8_t*)tcm_base + M * K * sizeof(int8_t);
 
     struct timespec start, end;
     pack(lhs, lhs_packed, M, K, M0, K0);
+    aimm_memcpy(lhs_packed_tcm, lhs_packed, M * K * sizeof(int8_t));
     transpose(rhs, rhs_t, K, N);
     pack(rhs_t, rhs_t_packed, N, K, N0, K0);
 
     flush_cache();
     clock_gettime(CLOCK_MONOTONIC, &start);
-    mmt4d_s8s8s32_tcm(lhs_packed, rhs_t_packed, res_packed, rhs_t_packed_tcm, M1, N1, K1, M0, N0, K0, total_rhs_panels_to_prefetch);
+    mmt4d_s8s8s32_tcm_decode(lhs_packed, rhs_t_packed, res_packed, rhs_t_packed_tcm, lhs_packed_tcm, M1, N1, K1, M0, N0, K0, total_rhs_panels_to_prefetch);
     clock_gettime(CLOCK_MONOTONIC, &end);
 
     unpack(res_packed, result, M, N, M0, N0);
     double mmt4d_time = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
     printf("Time for mmt4d with TCM: %f seconds\n", mmt4d_time);
 
-    aimm_tcm_free(rhs_t_packed_tcm);
-    free(lhs_packed);
-    aimm_dram_free(rhs_t_packed);
+    aimm_tcm_free(tcm_base);
+    aimm_dram_free(dma);
     free(res_packed);
     free2D(rhs_t, N);
     aimm_deinit();
 }
+
 
 void test_mmt4d(int** result, int8_t** lhs, int8_t** rhs, size_t M, size_t N, size_t K, size_t M0, size_t N0, size_t K0) {
     size_t M1 = M / M0;
@@ -104,7 +107,7 @@ void test_mmt4d(int** result, int8_t** lhs, int8_t** rhs, size_t M, size_t N, si
 
     flush_cache();
     clock_gettime(CLOCK_MONOTONIC, &start);
-    mmt4d_s8s8s32(lhs_packed, rhs_t_packed, res_packed, M1, N1, K1, M0, N0, K0);
+    mmt4d_s8s8s32_decode(lhs_packed, rhs_t_packed, res_packed, M1, N1, K1, M0, N0, K0);
     clock_gettime(CLOCK_MONOTONIC, &end);
 
     unpack(res_packed, result, M, N, M0, N0);
@@ -181,6 +184,7 @@ int main(int agrc, char* argv[]) {
     test_mmt4d_tcm(res_mmt4d_tcm, lhs, rhs, M, N, K, M0, N0, K0);
 
     // compare(res_matmul, res_mmt4d, M, N);
+    // printf("Still comparing with TCM decode version...\n");
     compare(res_mmt4d, res_mmt4d_tcm, M, N);
 
     printf("All results match!\n");

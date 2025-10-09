@@ -11,7 +11,7 @@ TCM_SRC=tcm/tcm.c
 DMA_SRC=udma/udma.c
 AIMM_SRC=aimm.c
 
-CSRC= main.c
+CSRC= multithread.c
 
 all:
 	@echo Build...

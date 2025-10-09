@@ -6,6 +6,24 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+// Function to flush the cache by accessing a large memory block
+void flush_cache() {
+    // This size should be larger than the L2 cache.
+    const size_t cache_size = 5 * 1024 * 1024;
+    volatile char* cache_killer = (volatile char*)malloc(cache_size);
+    if (cache_killer == NULL) {
+        perror("Failed to allocate memory for cache flushing");
+        return;
+    }
+
+    // Read every byte to force it into the cache.
+    for (size_t i = 0; i < cache_size; ++i) {
+        cache_killer[i] = 1;
+    }
+
+    free((void*)cache_killer);
+}
+
 void intialize_matrix(int8_t** matrix, size_t shape0, size_t shape1, int8_t value) {
     for (size_t i = 0; i < shape0; i++) {
         for (size_t j = 0; j < shape1; j++) {
