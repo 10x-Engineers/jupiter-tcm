@@ -41,7 +41,7 @@ int main(void)
 	int remain = DRAM_BUF_SIZE;
 	int offset = 0;
 
-	printf("aimm cpy dram ---> tcm: total(%lx) copy size(%lx) loop(%lx)\n", DRAM_BUF_SIZE, TCM_BUF_SIZE, loop);
+	printf("aimm cpy dram ---> tcm: total(%d) copy size(%x) loop(%x)\n", DRAM_BUF_SIZE, TCM_BUF_SIZE, loop);
 	for (int i =0; i < loop; i++) {
 		memcpy(tcm, dram + offset, cpy_size);
 		if (memcmp(tcm, dram + offset, cpy_size) != 0) {

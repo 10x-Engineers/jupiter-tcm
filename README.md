@@ -8,4 +8,4 @@ make
 ```
 
 ## Tests
-Current tests are from the original [tcm](https://gitee.com/bianbu-linux/tcm/tree/bl-v2.0.y) repository. They seem to be broken or incomplete. So we can ignore them for now. Keeping them for the sake of completeness.
+The `original_tests` directory contains the tests from the original [tcm](https://gitee.com/bianbu-linux/tcm/tree/bl-v2.0.y) repository. They seem to be broken or incomplete. So we can ignore them for now. Keeping them for the sake of completeness.
