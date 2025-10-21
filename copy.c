@@ -13,24 +13,20 @@ int main(void)
 {
 	aimm_init();
 	cpu_set_t mask;
-    	CPU_ZERO(&mask);
-    	// 绑定到四个AICPU核心
-    	CPU_SET(0, &mask);
-    	CPU_SET(1, &mask);
-    	CPU_SET(2, &mask);
-    	CPU_SET(3, &mask);
+	CPU_ZERO(&mask);
+	CPU_SET(0, &mask);
+	CPU_SET(1, &mask);
+	CPU_SET(2, &mask);
+	CPU_SET(3, &mask);
 
-    	// 获取当前进程ID
-    	pid_t pid = getpid();
+	pid_t pid = getpid();
 
-    	// 设置CPU亲和性
-    	if (sched_setaffinity(pid, sizeof(cpu_set_t), &mask) == -1) {
-        	perror("sched_setaffinity");
-        	return 1;
-    	}
+	if (sched_setaffinity(pid, sizeof(cpu_set_t), &mask) == -1) {
+		perror("sched_setaffinity");
+		return 1;
+	}
 	char *tcm = aimm_tcm_malloc(TCM_BUF_SIZE);
-	// char *dram = malloc(DRAM_BUF_SIZE);
-	char *dram = aimm_dram_malloc(DRAM_BUF_SIZE);
+	char *dram = malloc(DRAM_BUF_SIZE);
     if (!tcm || !dram) {
 		printf("aimm malloc failed(tcm:%lx)(dram:%lx)\n", (size_t)tcm, (size_t)dram);
 		return -1;
@@ -47,9 +43,7 @@ int main(void)
 
 	printf("aimm cpy dram ---> tcm: total(%lx) copy size(%lx) loop(%lx)\n", DRAM_BUF_SIZE, TCM_BUF_SIZE, loop);
 	for (int i =0; i < loop; i++) {
-		aimm_memcpy(tcm, dram + offset, cpy_size);
-		// memcpy(tcm, dram + offset, cpy_size);
-		//printf("memcpy tcm:%p, dram:%p, cpy_sz:%d\n", tcm, dram+offset, cpy_size);
+		memcpy(tcm, dram + offset, cpy_size);
 		if (memcmp(tcm, dram + offset, cpy_size) != 0) {
 			printf("aimm memcpy fail\n");
 			break;
@@ -71,7 +65,6 @@ int main(void)
 	}
 
 	aimm_tcm_free(tcm);
-	aimm_dram_free(dram);
-	// free(dram);
+	free(dram);
 	return 0;
 }
