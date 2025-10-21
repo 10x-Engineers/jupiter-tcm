@@ -37,7 +37,7 @@ void test_mmt4d_tcm(int** result, int8_t** lhs, int8_t** rhs, size_t M, size_t N
     }
 
     int8_t* lhs_packed = (int8_t*)malloc(M * K * sizeof(int8_t));
-    int8_t* rhs_t_packed = (int8_t*)aimm_dram_malloc(N * K * sizeof(int8_t));
+    int8_t* rhs_t_packed = (int8_t*)malloc(N * K * sizeof(int8_t));
     int* res_packed = (int*)malloc(M * N * sizeof(int));
 
     size_t size_of_rhs_panel = N0 * K0 * K1 * sizeof(int8_t);
@@ -52,8 +52,8 @@ void test_mmt4d_tcm(int** result, int8_t** lhs, int8_t** rhs, size_t M, size_t N
     if (tcm_base == NULL) {
         printf("Failed to allocate TCM memory for tiles.\n");
         free(lhs_packed);
+        free(rhs_t_packed);
         free(res_packed);
-        aimm_dram_free(rhs_t_packed);
         FREE2D(rhs_t, N);
         aimm_deinit();
         return;
@@ -75,8 +75,8 @@ void test_mmt4d_tcm(int** result, int8_t** lhs, int8_t** rhs, size_t M, size_t N
     printf("Time for mmt4d with TCM: %f seconds\n", mmt4d_time);
 
     free(lhs_packed);
+    free(rhs_t_packed);
     free(res_packed);
-    aimm_dram_free(rhs_t_packed);
     FREE2D(rhs_t, N);
     aimm_tcm_free(rhs_t_packed_tcm);
     aimm_deinit();
@@ -127,71 +127,21 @@ void test_matmul(int** result, int8_t** lhs, int8_t** rhs, size_t M, size_t N, s
     printf("Time for matmul: %f seconds\n", matmul_time);
 }
 
-typedef struct {
-    int core_id;
-} thread_arg_t;
-
-void* cache_flusher_thread(void* arg) {
-    thread_arg_t* t_arg = (thread_arg_t*)arg;
-    int core_id = t_arg->core_id;
-
-    // Bind the thread to the specific core
+int main(int agrc, char* argv[]) {
+    // setting process affinity to AI Cores (0-3)
     cpu_set_t mask;
     CPU_ZERO(&mask);
-    CPU_SET(core_id, &mask);
-
-    if (pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &mask) == -1) {
-        perror("pthread_setaffinity_np failed");
-        return NULL;
-    }
-
-    printf("Cache flusher thread bound to Core %d and starting work.\n", core_id);
-
-    // Continuously run flush_cache()
-    while (1) {
-        flush_cache();
-        struct timespec ts = {0, 10000}; // 10 us sleep
-        nanosleep(&ts, NULL);
-    }
-
-    // This function will never return from the while(1) loop
-    return NULL;
-}
-
-
-int main(int agrc, char* argv[]) {
-    if (agrc != 7) {
-        fprintf(stderr, "Usage: %s M N K M0 N0 K0\n", argv[0]);
-        return 1;
-    }
-
-    cpu_set_t main_mask;
-    CPU_ZERO(&main_mask);
-    CPU_SET(0, &main_mask); // Bind MAIN THREAD to Core 0
-
+    CPU_SET(0, &mask);
+    CPU_SET(1, &mask);
+    CPU_SET(2, &mask);
+    CPU_SET(3, &mask);
     pid_t pid = getpid();
-    if (sched_setaffinity(pid, sizeof(cpu_set_t), &main_mask) == -1) {
-        perror("sched_setaffinity (main thread)");
+    if (sched_setaffinity(pid, sizeof(cpu_set_t), &mask) == -1) {
+        perror("sched_setaffinity");
         return 1;
     }
-    printf("Main thread (MMT4D computation) bound to Core 0.\n");
 
-    pthread_t flusher_threads[3];
-    thread_arg_t thread_args[3];
-    int cores_to_bind[] = {1, 2, 3};
-
-    for (int i = 0; i < 3; i++) {
-        thread_args[i].core_id = cores_to_bind[i];
-        if (pthread_create(&flusher_threads[i], NULL, cache_flusher_thread, &thread_args[i]) != 0) {
-            perror("pthread_create failed");
-            return 1;
-        }
-    }
-
-    // Give the flusher threads a moment to bind and start work
-    usleep(10000);
-
-    size_t M = atoi(argv[1]);
+	size_t M = atoi(argv[1]);
     size_t N = atoi(argv[2]);
     size_t K = atoi(argv[3]);
     size_t M0 = atoi(argv[4]);
@@ -199,19 +149,23 @@ int main(int agrc, char* argv[]) {
     size_t K0 = atoi(argv[6]);
 
     int8_t** lhs = (int8_t**)malloc(M * sizeof(int8_t*));
-    for (size_t i = 0; i < M; i++) {
+    for (int i = 0; i < M; i++) {
         lhs[i] = (int8_t*)malloc(K * sizeof(int8_t));
     }
     int8_t** rhs = (int8_t**)malloc(K * sizeof(int8_t*));
-    for (size_t i = 0; i < K; i++) {
+    for (int i = 0; i < K; i++) {
         rhs[i] = (int8_t*)malloc(N * sizeof(int8_t));
     }
+    int** res_matmul = (int**)malloc(M * sizeof(int8_t*));
+    for (int i = 0; i < M; i++) {
+        res_matmul[i] = (int*)malloc(N * sizeof(int));
+    }
     int** res_mmt4d = (int**)malloc(M * sizeof(int*));
-    for (size_t i = 0; i < M; i++) {
+    for (int i = 0; i < M; i++) {
         res_mmt4d[i] = (int*)malloc(N * sizeof(int));
     }
     int** res_mmt4d_tcm = (int**)malloc(M * sizeof(int*));
-    for (size_t i = 0; i < M; i++) {
+    for (int i = 0; i < M; i++) {
         res_mmt4d_tcm[i] = (int*)malloc(N * sizeof(int));
     }
 
@@ -221,15 +175,18 @@ int main(int agrc, char* argv[]) {
     intialize_to_zero(res_mmt4d, M, N);
     intialize_to_zero(res_mmt4d_tcm, M, N);
 
-    printf("Starting MMT4D computation on Core 0 while Cores 1, 2, 3 flush caches.\n");
+    test_matmul(res_matmul, lhs, rhs, M, N, K);
     test_mmt4d(res_mmt4d, lhs, rhs, M, N, K, M0, N0, K0);
     test_mmt4d_tcm(res_mmt4d_tcm, lhs, rhs, M, N, K, M0, N0, K0);
 
-    compare(res_mmt4d, res_mmt4d_tcm, M, N);
+    compare(res_matmul, res_mmt4d, M, N);
+    compare(res_matmul, res_mmt4d_tcm, M, N);
+
     printf("All results match!\n");
 
     FREE2D(lhs, M);
     FREE2D(rhs, K);
+    FREE2D(res_matmul, M);
     FREE2D(res_mmt4d, M);
     FREE2D(res_mmt4d_tcm, M);
 

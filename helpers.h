@@ -6,9 +6,16 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-// Function to flush the cache by accessing a large memory block
+#define FREE2D(matrix, shape0)                      \
+    do {                                            \
+        for (size_t i = 0; i < (shape0); i++) {     \
+            free((matrix)[i]);                      \
+        }                                           \
+        free(matrix);                               \
+    } while (0)
+
+
 void flush_cache() {
-    // This size should be larger than the L2 cache.
     const size_t cache_size = 5 * 1024 * 1024;
     volatile char* cache_killer = (volatile char*)malloc(cache_size);
     if (cache_killer == NULL) {
@@ -16,7 +23,6 @@ void flush_cache() {
         return;
     }
 
-    // Read every byte to force it into the cache.
     for (size_t i = 0; i < cache_size; ++i) {
         cache_killer[i] = 1;
     }
@@ -84,20 +90,6 @@ void compare(int **matrix1, int **matrix2, size_t shape0, size_t shape1) {
             }
         }
     }
-}
-
-void free2D(int8_t** matrix, size_t shape0) {
-    for (size_t i = 0; i < shape0; i++) {
-        free(matrix[i]);
-    }
-    free(matrix);
-}
-
-void free2D_s32(int** matrix, size_t shape0) {
-    for (size_t i = 0; i < shape0; i++) {
-        free(matrix[i]);
-    }
-    free(matrix);
 }
 
 #endif
