@@ -18,7 +18,7 @@
 #include "helpers.h"
 #include "ukernels.h"
 
-#define TCM_ALLOCATION_SIZE (128 * 1024)
+#define TCM_ALLOCATION_SIZE (16 * 1024)
 
 typedef struct {
     int thread_id; // Core ID 0, 1, 2, 3
@@ -32,7 +32,6 @@ typedef struct {
     size_t total_rhs_panels_to_prefetch;
 } mmt4d_tcm_thread_arg_t;
 
-
 void* mmt4d_tcm_worker_thread(void* arg) {
     mmt4d_tcm_thread_arg_t* t_arg = (mmt4d_tcm_thread_arg_t*)arg;
     int core_id = t_arg->thread_id;
@@ -45,14 +44,14 @@ void* mmt4d_tcm_worker_thread(void* arg) {
         return NULL;
     }
 
-    void* tcm_base = aimm_tcm_malloc_sync(TCM_ALLOCATION_SIZE, 0);
+    void* tcm_base = aimm_tcm_malloc_sync(128 * 1024, 0);
     if (tcm_base == NULL) {
         printf("Failed to allocate TCM memory for tiles.\n");
         return NULL;
     }
     int8_t* rhs_t_packed_tcm = (int8_t*)tcm_base;
 
-    mmt4d_s8s8s32_tcm(t_arg->lhs_packed, t_arg->rhs_t_packed, t_arg->res_packed, rhs_t_packed_tcm, t_arg->M1, t_arg->N1, t_arg->start_N1_idx, t_arg->end_N1_idx, t_arg->K1, t_arg->M0, t_arg->N0, t_arg->K0, t_arg->total_rhs_panels_to_prefetch);
+    mmt4d_s8s8s32_tcm_narrow(t_arg->lhs_packed, t_arg->rhs_t_packed, t_arg->res_packed, rhs_t_packed_tcm, t_arg->M1, t_arg->N1, t_arg->start_N1_idx, t_arg->end_N1_idx, t_arg->K1, t_arg->M0, t_arg->N0, t_arg->K0, t_arg->total_rhs_panels_to_prefetch);
 
     aimm_tcm_free(tcm_base);
     return NULL;
@@ -120,7 +119,7 @@ void test_mmt4d_tcm_parallel(int** result, int8_t** lhs, int8_t** rhs, size_t M,
 
         current_N1_start = args[i].end_N1_idx;
 
-        // printf("Worker %d processing N1 panels [%zu, %zu)\n", i, args[i].start_N1_idx, args[i].end_N1_idx);
+        printf("Worker %d processing N1 panels [%zu, %zu)\n", i, args[i].start_N1_idx, args[i].end_N1_idx);
 
         if (pthread_create(&threads[i], NULL, mmt4d_tcm_worker_thread, &args[i]) != 0) {
             perror("pthread_create failed");
@@ -176,7 +175,7 @@ void* mmt4d_worker_thread(void* arg) {
         return NULL;
     }
 
-    mmt4d_s8s8s32(t_arg->lhs_packed, t_arg->rhs_t_packed, t_arg->res_packed, t_arg->M1, t_arg->N1, t_arg->start_N1_idx, t_arg->end_N1_idx, t_arg->K1, t_arg->M0, t_arg->N0, t_arg->K0);
+    mmt4d_s8s8s32_narrow(t_arg->lhs_packed, t_arg->rhs_t_packed, t_arg->res_packed, t_arg->M1, t_arg->N1, t_arg->start_N1_idx, t_arg->end_N1_idx, t_arg->K1, t_arg->M0, t_arg->N0, t_arg->K0);
 
     return NULL;
 }
